@@ -31,3 +31,5 @@ package-lock.json
 */*.log
 column_mapping.json
 table_mapping.json
+*.sql.gz
+*.sql
