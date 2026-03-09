@@ -335,7 +335,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
     } else {
         die("Unsupported database type: ". $env['db_type'] ."");
     }
-    $Pdo = new PDO($Dsn, $env['db_user'], $env['db_password']);
+    $Pdo = new PDO($Dsn, $local_admin_user, $local_admin_password);
     $Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     debuglog("Connected to ". $clone_name ."" );
