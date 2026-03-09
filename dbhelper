@@ -314,6 +314,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
     global $env;
     global $column_mapping;
 
+    /*
     table_analyze();
 
     debuglog("Cloning database ". $env['db_name'] ."");
@@ -331,6 +332,8 @@ function create_devdb($local_admin_user, $local_admin_password) {
         debuglog("Executing command: ". $command ."");
         exec($command);
     }
+    */
+    $clone_name = "aat_c1773081060_7069";
 
     // Connect to the cloned database
 
