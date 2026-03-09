@@ -1,0 +1,399 @@
+<?php
+
+
+$start = microtime(true);
+
+$available_commands = ['create:devdb', 'table:analyze', 'table:sanitize'];
+
+$argc = $_SERVER['argc'];
+$argv = $_SERVER['argv'];
+
+// Check if the script is run from the command line
+if (php_sapi_name() !== 'cli') {
+    die("This script must be run from the command line.");
+}
+
+/**
+ * Load a Laravel-style .env file into an associative array.
+ *
+ * @param string $filePath Path to the .env file.
+ * @return array Associative array of environment variables.
+ * @throws Exception If the file cannot be read.
+ */
+function loadEnvFile($filePath)
+{
+    if (!file_exists($filePath) || !is_readable($filePath)) {
+        throw new Exception("The .env file does not exist or is not readable: $filePath");
+    }
+
+    $env = [];
+    $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    foreach ($lines as $line) {
+        // Skip comments
+        if (strpos(trim($line), '#') === 0) {
+            continue;
+        }
+
+        // Parse key-value pairs
+        if (strpos($line, '=') !== false) {
+            list($key, $value) = explode('=', $line, 2);
+
+            // Remove surrounding quotes from the value, if any
+            $value = trim($value);
+            if (preg_match('/^["\'].*["\']$/', $value)) {
+                $value = substr($value, 1, -1);
+            }
+
+            $env[trim($key)] = $value;
+        }
+    }
+
+    return $env;
+}
+
+// Example usage
+try {
+    $env = loadEnvFile(__DIR__ . '/.env');
+    
+    if (empty($env)) {
+        die("No environment variables found in the .env file.\n");
+    } else if (empty($env['db_type'])) {
+        die("The 'db_type' variable is missing in the .env file.\n");
+    }
+
+} catch (Exception $e) {
+    debuglog("Error: " . $e->getMessage() . PHP_EOL);
+}
+
+// Load config files (if they exists)
+
+$table_mapping = [];
+if (file_exists(__DIR__ ."/". $env['dbh_tablemapping'] ."")) {
+    $table_mapping = json_decode(file_get_contents(__DIR__ ."/". $env['dbh_tablemapping'] .""), true);
+}
+
+$column_mapping = [];
+if (file_exists(__DIR__ ."/". $env['dbh_columnmapping'] ."")) {
+    $column_mapping = json_decode(file_get_contents(__DIR__ ."/". $env['dbh_columnmapping'] .""), true);
+}
+
+$column_template = [];
+if (file_exists(__DIR__ ."/". $env['dbh_columntemplate'] ."")) {
+    $column_template = json_decode(file_get_contents(__DIR__ ."/". $env['dbh_columntemplate'] .""), true);
+}
+
+
+// Access CLI arguments
+// $argv[0] is the script name
+// $argv[1], $argv[2], ... are the arguments passed to the script
+if ($argc > 1) {
+    $command = $argv[1];
+
+    switch ($command) {
+        case 'create:devdb':
+            if ($argc !== 4) {
+                die("Usage: php dbhelper create:devdb [local_admin_user] [local_admin_password]\n");
+            }
+            debuglog("Creating development database file...");
+            create_devdb($argv[2], $argv[3]);
+        break;
+        case 'table:analyze':
+            debuglog("Analyzing tables...");
+            table_analyze();
+        break;
+        case 'table:sanitize':
+            debuglog("Sanitizing tables...");
+            table_sanitize();
+        break;
+        default:
+            die("Unknown command: $command. Supported commands are: " . implode(', ', $available_commands) . "\n");
+    }
+} else {
+    die("No commands provided. Following commands are supported: php dbhelper [" . implode('|', $available_commands) . "]\n". PHP_EOL);
+}
+
+function debuglog($message) {
+    global $start;
+    global $env;
+    $now = microtime(true);
+    $runtime = round($now-$start, 2);
+    if ($env['debug']) {
+        echo "[". $runtime ."s] ". $message . PHP_EOL;
+    }
+}
+
+function updateTableConfig ($table, $daterow, $agelimit) {
+    global $env;
+    global $table_mapping;
+
+    // Update the global array
+    if (!isset($table_mapping[$table])) {
+        $table_mapping[$table] = [];
+    }
+    $table_mapping[$table]['daterow'] = $daterow;
+    $table_mapping[$table]['agelimit'] = $agelimit;
+    savefile($env['dbh_tablemapping'], json_encode($table_mapping, JSON_PRETTY_PRINT));
+
+}
+
+function updateColumnConfig ($table, $column, $definition) {
+    global $env;
+    global $column_mapping;
+
+    // Update the global array
+    if (!isset($column_mapping[$table])) {
+        $column_mapping[$table] = [];
+    }
+    $column_mapping[$table][$column] = $definition;
+    savefile($env['dbh_columnmapping'], json_encode($column_mapping, JSON_PRETTY_PRINT));
+
+}
+
+function savefile($filename, $content) {
+    file_put_contents(__DIR__ ."/". $filename ."", $content);
+}
+
+function promptUser($message, $options = []) {
+    echo PHP_EOL;
+    echo $message . PHP_EOL;
+
+    if (!empty($options)) {
+        // Mark the first option as default if the user just hits enter
+        foreach ($options AS $key => &$option) {
+            if ($key === 0) {
+                $option .= "[*default]";
+            }
+        }
+        echo "Options: " . implode(", ", $options) . PHP_EOL;
+    }
+
+    $input = readline("Your choice: ");
+    if (empty(trim($input)) && isset($options[0])) {
+        $input = str_replace("[*default]","", $options[0]);
+    }
+    return trim($input);
+}
+
+function table_sanitize() {
+    global $env;
+
+    // Always start with analyze to be sure theres nothing new
+    table_analyze();
+
+    // This function will loop through all tables and columns and sanitize the data based on the column mapping file, this is useful if you want to re-sanitize the database after changing the column mapping file or if you want to sanitize the original database without creating a clone first
+        debuglog("Connecting to database ". $env['db_name'] ."");
+
+
+}
+
+function table_analyze() {
+    global $env;
+    global $column_template;
+    global $column_mapping;
+    global $table_mapping;
+
+    debuglog("Connecting to database ". $env['db_name'] ."");
+    
+    if ($env['db_type'] === "mysql") {
+        $Dsn = "mysql:host={$env['db_host']};port={$env['db_port']};dbname={$env['db_name']};charset=utf8mb4";
+    } else if ($env['db_type'] === "pgsql") {
+        $Dsn = "pgsql:host={$env['db_host']};port={$env['db_port']};dbname={$env['db_name']}";
+    } else {
+        die("Unsupported database type: ". $env['db_type'] ."");
+    }
+    $Pdo = new PDO($Dsn, $env['db_user'], $env['db_password']);
+    $Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    debuglog("Connected to ". $env['db_name'] ."");
+
+    $stmt = $Pdo->query("SHOW TABLES");
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $tablecnt = count($tables);
+    $donecnt = 0;
+    debuglog("Found ". $tablecnt ." tables in the database");
+
+    foreach ($tables as $table) {
+
+        $datecols = [];
+        $sensitivecnt = 0;
+        $donecnt++;
+
+
+            //debuglog("Analyzing `". $table ."`");
+            // Get all columns and column types of given table
+            $stmt = $Pdo->query("SHOW COLUMNS FROM `". $table ."`");
+            $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($columns as $column) {
+                $colName = $column['Field'];
+                $colType = $column['Type'];
+
+                if ($colType === "date" || $colType === "datetime" || $colType === "timestamp") {
+                    $datecols[] = $colName;
+                }
+
+                // Check if table.column is already in the column mapping file, if yes, use the mapping to determine if it's sensitive or not
+                if (isset($column_mapping[$table]) && isset($column_mapping[$table][$colName])) {
+                    $mapping = $column_mapping[$table][$colName];
+                    if ($mapping === "sensitive") {
+//                        debuglog("Column $colName marked as sensitive based on column mapping.");
+                        $sensitivecnt++;
+                    } else {
+                        //debuglog("Column $colName ignored based on column mapping.");
+                    }
+                    /*
+                    debuglog("Column: ". $colName ." mapped as ". $mapping ." in column mapping file.");
+                    */
+                    continue;
+                }
+
+                // Check if table.column is in the column template file, if yes, use the template to determine if it's sensitive or not
+
+                if (isset($column_template['nonpersonal_types']) && in_array($colType, $column_template['nonpersonal_types'])) {
+                    //debuglog("Column: ". $colName ." type ". $colType ." marked as non-personal based on column template.");
+                    updateColumnConfig($table, $colName, "non-sensitive");
+                    continue;
+                } else if (isset($column_template['nonpersonal']) && in_array($colName, $column_template['nonpersonal'])) {
+                    //debuglog("Column: ". $colName ." marked as non-personal based on column template.");
+                    updateColumnConfig($table, $colName, "non-sensitive");
+                    continue;
+                } else if (isset($column_template['personal']) && in_array($colName, $column_template['personal'])) {
+                    //debuglog("Column: ". $colName ." marked as personal based on column template.");
+                    updateColumnConfig($table, $colName, "sensitive");
+                    $sensitivecnt++;
+                    continue;
+                }
+
+                // Else, ask the user to define if the column is sensitive or not based on the column name and type
+                $definition = promptUser("How should `". $table ."` column [". $colName ."] be defined?", ["0=Not sensitive", "1=Sensitive"]);
+                if ($definition === "1") {
+                    //debuglog("Column $colName marked as sensitive.");
+                    updateColumnConfig($table, $colName, "sensitive");
+                    $sensitivecnt++;
+                } else {
+                    //debuglog("Column $colName ignored.");
+                    updateColumnConfig($table, $colName, "non-sensitive");
+                }
+
+            }
+
+            if (count($datecols) == 0) {
+                //debuglog("Table `". $table ."` has no date columns, cannot add automatic anonymization");
+                continue;
+            } else if ($sensitivecnt > 0 && count($datecols) > 0 && (!isset($table_mapping[$table]) || !isset($table_mapping[$table]['daterow']) || !isset($table_mapping[$table]['agelimit']))) {
+                
+                $daterow = promptUser("Which column contains the date information for `". $table ."`?", $datecols);
+                if (!in_array($daterow, $datecols)) {
+                    debuglog("I didnt understand that, I'm skipping this table for now");
+                } else {
+                    $agelimit = null;
+
+                    // Re-request user input until we get a number:
+                    while (!$agelimit) {
+                        $agelimit = promptUser("What is the age limit in months for `". $table ."`? (e.g. 2 means that all data older than 2 months will be considered as old and can be anonymized/deleted)");                        
+                    }
+
+                    if (!is_numeric($agelimit)) {
+                        $agelimit = 10000;
+                        debuglog("I didnt understand that, defaulting to 10000 months");
+                    }
+
+                    updateTableConfig($table, $daterow, $agelimit);
+                }
+            } else {
+                //debuglog("Table `". $table ."` already mapped");
+                continue;
+            }
+
+            $donepct = round($donecnt/$tablecnt*100,1);
+            debuglog("You are now done with ". $donecnt ." of ". $tablecnt ." tables, thats ". $donepct ."% completion");
+    }
+}
+
+function create_devdb($local_admin_user, $local_admin_password) {
+    global $env;
+
+    table_analyze();
+
+    debuglog("Cloning database ". $env['db_name'] ."");
+
+    // Clone name is db name + timestamp + a short 4 char random hash
+    $clone_name = $env['db_name'] ."_c". microtime(true) ."_". substr(md5(uniqid(rand(), true)), 0, 4);
+    
+    if ($env['db_type'] == "pgsql") {
+        die("Sorry, create:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
+    } else if ($env['db_type'] == "mysql") {
+        exec("mysqldump -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."");
+    }
+
+    // Connect to the cloned database
+
+    if ($env['db_type'] === "mysql") {
+        $Dsn = "mysql:host={$env['db_host']};port={$env['db_port']};dbname={$clone_name};charset=utf8mb4";
+    } else if ($env['db_type'] === "pgsql") {
+        $Dsn = "pgsql:host={$env['db_host']};port={$env['db_port']};dbname={$clone_name}";
+    } else {
+        die("Unsupported database type: ". $env['db_type'] ."");
+    }
+    $Pdo = new PDO($Dsn, $env['db_user'], $env['db_password']);
+    $Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    debuglog("Connected to ". $clone_name ."" );
+
+    // Loop through all tables and remove data from sensitive columns
+
+    $stmt = $Pdo->query("SHOW TABLES");
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $tablecnt = count($tables);
+    $donecnt = 0;
+    debuglog("Found ". $tablecnt ." tables in the database");
+
+    foreach ($tables as $table) {
+        // Get all columns and column types of given table
+        $stmt = $Pdo->query("SHOW COLUMNS FROM `". $table ."`");
+        $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($columns as $column) {
+            $colName = $column['Field'];
+            $colType = $column['Type'];
+            $nullable = $column['Null'] === "YES" ? true : false;
+
+            if (isset($column_mapping[$table]) && isset($column_mapping[$table][$colName]) && $column_mapping[$table][$colName] === "sensitive") {
+                // This column is marked as sensitive, we need to sanitize it
+                debuglog("Sanitizing column: ". $table .".". $colName ." of type ". $colType ."");
+
+                if ($nullable) {
+                    $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = NULL");
+                    continue;
+                }
+
+                switch ($colType) {
+                    case (strpos($colType, 'int') !== false):
+                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = 0");
+                        break;
+                    case (strpos($colType, 'varchar') !== false):
+                    case (strpos($colType, 'text') !== false):
+                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = CONCAT('sanitized_', id)");
+                        break;
+                    case (strpos($colType, 'date') !== false):
+                    case (strpos($colType, 'datetime') !== false):
+                    case (strpos($colType, 'timestamp') !== false):
+                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = '1970-01-01'");
+                        break;
+                    default:
+                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = CONCAT('sanitized_', id)");
+                    break;
+                }
+            }
+        }
+    }
+   
+    // And finally dump the data to a gzipped file ready to be imported on the DEV server
+    debuglog("Dumping sanitized database...");
+    exec("mysqldump -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ." | gzip > out/sanitized_dump_". $clone_name ."-". date("Y-m-d H:i") .".sql.gz");
+
+    return true;
+
+}
+
+
+?>
