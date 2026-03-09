@@ -337,7 +337,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
 
     // Give $env['db_user'] permissions to the cloned database, we need this to be able to connect to the cloned database and sanitize the data
     if ($env['db_type'] == "mysql") {
-        $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"GRANT ALL PRIVILEGES ON ". $clone_name .".* TO '". $env['db_user'] ."'@'%'\"";
+        $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"GRANT ALL PRIVILEGES ON ". $clone_name .".* TO '". $env['db_user'] ."'@'localhost'\"";
         debuglog("Executing command: ". $command ."");
         exec($command);
     } else if ($env['db_type'] == "pgsql") {
