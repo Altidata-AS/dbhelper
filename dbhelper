@@ -372,7 +372,6 @@ function create_devdb($local_admin_user, $local_admin_password) {
         $stmt = $Pdo->query("SHOW COLUMNS FROM `". $table ."`");
         $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($columns as $column) {
-            print_r($column);
             $colName = $column['Field'];
             $colType = $column['Type'];
             $nullable = $column['Null'] === "YES" ? true : false;
@@ -381,13 +380,8 @@ function create_devdb($local_admin_user, $local_admin_password) {
                 // This column is marked as sensitive, we need to sanitize it
                 debuglog("Sanitizing column: ". $table .".". $colName ." of type ". $colType ."");
 
-                if (!$nullable && $column['Key'] === "PRI") {
+                if ($column['Key'] === "PRI" || $column['Key'] === "UNI") {
                     $Pdo->exec("DELETE FROM `". $table ."`");
-                }
-
-                if ($nullable) {
-                    $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = NULL");
-                    continue;
                 }
 
                 switch ($colType) {
