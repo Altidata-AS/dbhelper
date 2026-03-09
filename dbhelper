@@ -335,6 +335,15 @@ function create_devdb($local_admin_user, $local_admin_password) {
     */
     $clone_name = "aat_c1773081060_7069";
 
+    // Give $env['db_user'] permissions to the cloned database, we need this to be able to connect to the cloned database and sanitize the data
+    if ($env['db_type'] == "mysql") {
+        $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"GRANT ALL PRIVILEGES ON ". $clone_name .".* TO '". $env['db_user'] ."'@'%'\"";
+        debuglog("Executing command: ". $command ."");
+        exec($command);
+    } else if ($env['db_type'] == "pgsql") {
+        die("Sorry, create:devdb is only supported for mysql right now");
+    }   
+
     // Connect to the cloned database
 
     if ($env['db_type'] === "mysql") {
@@ -344,6 +353,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
     } else {
         die("Unsupported database type: ". $env['db_type'] ."");
     }
+    debuglog("Connecting to database..." );
     $Pdo = new PDO($Dsn, $local_admin_user, $local_admin_password);
     $Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
