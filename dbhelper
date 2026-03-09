@@ -312,6 +312,7 @@ function table_analyze() {
 
 function create_devdb($local_admin_user, $local_admin_password) {
     global $env;
+    global $column_mapping;
 
     table_analyze();
 
@@ -326,7 +327,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
         $command = 'mysql -u '. $local_admin_user .' -p'. $local_admin_password .' -e "CREATE DATABASE '. $clone_name .'";';
         debuglog("Executing command: ". $command ."");
         exec($command);
-        $command = "mysqldump -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."";
+        $command = "mysqldump --single-transaction --quick --routines --triggers --events -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."";
         debuglog("Executing command: ". $command ."");
         exec($command);
     }
