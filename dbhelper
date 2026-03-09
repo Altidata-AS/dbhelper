@@ -318,7 +318,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
     debuglog("Cloning database ". $env['db_name'] ."");
 
     // Clone name is db name + timestamp + a short 4 char random hash
-    $clone_name = $env['db_name'] ."_c". microtime(false) ."_". substr(md5(uniqid(rand(), true)), 0, 4);
+    $clone_name = $env['db_name'] ."_c". time() ."_". substr(md5(uniqid(rand(), true)), 0, 4);
     
     if ($env['db_type'] == "pgsql") {
         die("Sorry, create:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
