@@ -391,7 +391,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
                         break;
                     case (strpos($colType, 'varchar') !== false):
                     case (strpos($colType, 'text') !== false):
-                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = CONCAT('sanitized_', id)");
+                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = 'sanitized'");
                         break;
                     case (strpos($colType, 'date') !== false):
                     case (strpos($colType, 'datetime') !== false):
@@ -399,7 +399,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
                         $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = '1970-01-01'");
                         break;
                     default:
-                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = CONCAT('sanitized_', id)");
+                        $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = 'sanitized'");
                     break;
                 }
             }
