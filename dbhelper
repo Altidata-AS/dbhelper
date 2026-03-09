@@ -372,6 +372,7 @@ function create_devdb($local_admin_user, $local_admin_password) {
         $stmt = $Pdo->query("SHOW COLUMNS FROM `". $table ."`");
         $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($columns as $column) {
+            print_r($column);
             $colName = $column['Field'];
             $colType = $column['Type'];
             $nullable = $column['Null'] === "YES" ? true : false;
@@ -387,6 +388,8 @@ function create_devdb($local_admin_user, $local_admin_password) {
 
                 switch ($colType) {
                     case (strpos($colType, 'int') !== false):
+                    case (strpos($colType, 'decimal') !== false):
+                    case (strpos($colType, 'float') !== false):
                         $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = 0");
                         break;
                     case (strpos($colType, 'varchar') !== false):
