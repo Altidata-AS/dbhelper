@@ -323,6 +323,9 @@ function create_devdb($local_admin_user, $local_admin_password) {
     if ($env['db_type'] == "pgsql") {
         die("Sorry, create:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
     } else if ($env['db_type'] == "mysql") {
+        $command = 'mysql -u '. $local_admin_user .' -p'. $local_admin_password .' -e "CREATE DATABASE '. $clone_name .'";';
+        debuglog("Executing command: ". $command ."");
+        exec($command);
         $command = "mysqldump -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."";
         debuglog("Executing command: ". $command ."");
         exec($command);
