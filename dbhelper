@@ -381,6 +381,10 @@ function create_devdb($local_admin_user, $local_admin_password) {
                 // This column is marked as sensitive, we need to sanitize it
                 debuglog("Sanitizing column: ". $table .".". $colName ." of type ". $colType ."");
 
+                if (!$nullable && $column['Key'] === "PRI") {
+                    $Pdo->exec("DELETE FROM `". $table ."`");
+                }
+
                 if ($nullable) {
                     $Pdo->exec("UPDATE `". $table ."` SET `". $colName ."` = NULL");
                     continue;
