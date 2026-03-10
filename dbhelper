@@ -63,7 +63,7 @@ try {
     }
 
 } catch (Exception $e) {
-    debuglog("Error: " . $e->getMessage() . PHP_EOL);
+    die("Error: " . $e->getMessage() . PHP_EOL);
 }
 
 // Load config files (if they exists)
