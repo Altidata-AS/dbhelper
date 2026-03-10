@@ -459,6 +459,14 @@ function create_devdb($local_admin_user, $local_admin_password, $skip_prefixes =
     debuglog("Dumping sanitized database...");
     exec("mysqldump -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ." | gzip > sanitized_dump_". $clone_name ."_". date("Y-m-d") .".sql.gz");
 
+    // Drop the cloned database, we dont need it anymore
+    debuglog("Dropping cloned database...");
+    if ($env['db_type'] == "mysql") {
+        $command = 'mysql -u '. $local_admin_user .' -p'. $local_admin_password .' -e "DROP DATABASE '. $clone_name .'";';
+        debuglog("Executing command: ". $command ."");
+        exec($command);
+    }
+    
     return true;
 
 }
