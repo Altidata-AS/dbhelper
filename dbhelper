@@ -346,7 +346,6 @@ function import_devdb($local_admin_user, $local_admin_password, $datafile) {
     $stmt = $Pdo->query("SHOW TABLES");
     $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $tablecnt = count($tables);
-    $donecnt = 0;
     debuglog("Found ". $tablecnt ." tables in the existing database, lets drop them before importing the new data");
 
     foreach ($tables as $table) {
