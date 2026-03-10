@@ -352,8 +352,7 @@ function import_devdb($local_admin_user, $local_admin_password, $datafile) {
     foreach ($tables as $table) {
             // Drop table
             if ($env['db_type'] == "mysql") {
-                $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"DROP TABLE IF EXISTS `". $table ."`;\" ". $env['db_name'] ."";
-                debuglog("Executing command: ". $command ."");
+                $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"DROP TABLE IF EXISTS `". $env['db_name'] ."`.`". $table ."`;\" ". $env['db_name'] ."";
                 exec($command);
             } else if ($env['db_type'] == "pgsql") {
                 die("Sorry, import:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
