@@ -331,22 +331,37 @@ function import_devdb($local_admin_user, $local_admin_password, $datafile) {
         die("The data file does not exist or is not readable: $datafile");
     }
 
+    if ($env['db_type'] === "mysql") {
+        $Dsn = "mysql:host={$env['db_host']};port={$env['db_port']};dbname={$env['db_name']};charset=utf8mb4";
+    } else if ($env['db_type'] === "pgsql") {
+        $Dsn = "pgsql:host={$env['db_host']};port={$env['db_port']};dbname={$env['db_name']}";
+    } else {
+        die("Unsupported database type: ". $env['db_type'] ."");
+    }
+    $Pdo = new PDO($Dsn, $local_admin_user, $local_admin_password);
+    $Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    debuglog("Connected to ". $env['db_name'] ."");
+
+    $stmt = $Pdo->query("SHOW TABLES");
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $tablecnt = count($tables);
+    $donecnt = 0;
+    debuglog("Found ". $tablecnt ." tables in the existing database, lets drop them before importing the new data");
+
+    foreach ($tables as $table) {
+            // Drop table
+            if ($env['db_type'] == "mysql") {
+                $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"DROP TABLE IF EXISTS `". $table ."`;\" ". $env['db_name'] ."";
+                debuglog("Executing command: ". $command ."");
+                exec($command);
+            } else if ($env['db_type'] == "pgsql") {
+                die("Sorry, import:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
+            }
+    }
+
+
     if ($env['db_type'] == "mysql") {
-        // Start by dropping all tables in the database to be sure we have a clean slate, we could also drop and recreate the database but that would require us to re-grant permissions to the db user, which is a bit more work and also more risky if something goes wrong with the permissions
-        debuglog("Dropping all tables in the database ". $env['db_name'] ." before importing the new data");
-        $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"SET FOREIGN_KEY_CHECKS = 0;
-        SET GROUP_CONCAT_MAX_LEN=32768;
-        SET @tables = NULL;
-        SELECT GROUP_CONCAT('`', table_name, '`') INTO @tables
-        FROM information_schema.tables
-        WHERE table_schema = '". $env['db_name'] ."';
-        SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
-        PREPARE stmt FROM @tables;
-        EXECUTE stmt;
-        DEALLOCATE PREPARE stmt;
-        SET FOREIGN_KEY_CHECKS = 1;\" ". $env['db_name'] ."";
-        debuglog("Executing command: ". $command ."");
-        exec($command);
         $command = "gunzip < ". $datafile ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ."";
         debuglog("Executing command: ". $command ."");
         exec($command);
