@@ -99,11 +99,11 @@ if ($argc > 1) {
             create_devdb($argv[2], $argv[3], $argv[4] ?? null);
         break;
         case 'import:devdb':
-            if ($argc < 6 || $argc > 6) {
-                die("Usage: php dbhelper import:devdb [local_admin_user] [local_admin_password] [structure_file] [data_file]\n");
+            if ($argc <> 5) {
+                die("Usage: php dbhelper import:devdb [local_admin_user] [local_admin_password] [data_file]\n");
             }
             debuglog("Importing development database file to DEV...");
-            import_devdb($argv[2], $argv[3], $argv[4], $argv[5]);
+            import_devdb($argv[2], $argv[3], $argv[4]);
         break;
         case 'table:analyze':
             debuglog("Analyzing tables...");
@@ -322,6 +322,40 @@ function table_analyze() {
     return $table_list;
 }
 
+function import_devdb($local_admin_user, $local_admin_password, $datafile) {
+    global $env;
+
+    debuglog("Importing database dump from file: ". $datafile ."");
+
+    if (!file_exists($datafile) || !is_readable($datafile)) {
+        die("The data file does not exist or is not readable: $datafile");
+    }
+
+    if ($env['db_type'] == "mysql") {
+        // Start by dropping all tables in the database to be sure we have a clean slate, we could also drop and recreate the database but that would require us to re-grant permissions to the db user, which is a bit more work and also more risky if something goes wrong with the permissions
+        debuglog("Dropping all tables in the database ". $env['db_name'] ." before importing the new data");
+        $command = "mysql -u ". $local_admin_user ." -p". $local_admin_password ." -e \"SET FOREIGN_KEY_CHECKS = 0;
+        SET GROUP_CONCAT_MAX_LEN=32768;
+        SET @tables = NULL;
+        SELECT GROUP_CONCAT('`', table_name, '`') INTO @tables
+        FROM information_schema.tables
+        WHERE table_schema = '". $env['db_name'] ."';
+        SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
+        PREPARE stmt FROM @tables;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SET FOREIGN_KEY_CHECKS = 1;\" ". $env['db_name'] ."";
+        debuglog("Executing command: ". $command ."");
+        exec($command);
+        $command = "gunzip < ". $datafile ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ."";
+        debuglog("Executing command: ". $command ."");
+        exec($command);
+    } else if ($env['db_type'] == "pgsql") {
+        die("Sorry, import:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
+    }
+}
+
+
 function create_devdb($local_admin_user, $local_admin_password, $skip_prefixes = null) {
     global $env;
     global $column_mapping;
@@ -466,7 +500,7 @@ function create_devdb($local_admin_user, $local_admin_password, $skip_prefixes =
         debuglog("Executing command: ". $command ."");
         exec($command);
     }
-    
+
     return true;
 
 }
