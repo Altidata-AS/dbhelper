@@ -92,11 +92,18 @@ if ($argc > 1) {
 
     switch ($command) {
         case 'create:devdb':
-            if ($argc !== 4) {
-                die("Usage: php dbhelper create:devdb [local_admin_user] [local_admin_password]\n");
+            if ($argc < 4 || $argc > 5) {
+                die("Usage: php dbhelper create:devdb [local_admin_user] [local_admin_password] [skiptabledata_prefix,skiptabledata_prefix2,...]\n");
             }
             debuglog("Creating development database file...");
-            create_devdb($argv[2], $argv[3]);
+            create_devdb($argv[2], $argv[3], $argv[4] ?? null);
+        break;
+        case 'import:devdb':
+            if ($argc < 6 || $argc > 6) {
+                die("Usage: php dbhelper import:devdb [local_admin_user] [local_admin_password] [structure_file] [data_file]\n");
+            }
+            debuglog("Importing development database file to DEV...");
+            import_devdb($argv[2], $argv[3], $argv[4], $argv[5]);
         break;
         case 'table:analyze':
             debuglog("Analyzing tables...");
@@ -193,6 +200,8 @@ function table_analyze() {
     global $column_mapping;
     global $table_mapping;
 
+    $table_list = [];
+
     debuglog("Connecting to database ". $env['db_name'] ."");
     
     if ($env['db_type'] === "mysql") {
@@ -214,6 +223,8 @@ function table_analyze() {
     debuglog("Found ". $tablecnt ." tables in the database");
 
     foreach ($tables as $table) {
+
+        $table_list[] = $table;
 
         $datecols = [];
         $sensitivecnt = 0;
@@ -308,18 +319,21 @@ function table_analyze() {
             $donepct = round($donecnt/$tablecnt*100,1);
             debuglog("You are now done with ". $donecnt ." of ". $tablecnt ." tables, thats ". $donepct ."% completion");
     }
+    return $table_list;
 }
 
-function create_devdb($local_admin_user, $local_admin_password) {
+function create_devdb($local_admin_user, $local_admin_password, $skip_prefixes = null) {
     global $env;
     global $column_mapping;
 
-    table_analyze();
+    $tables = table_analyze();
 
     debuglog("Cloning database ". $env['db_name'] ."");
 
     // Clone name is db name + timestamp + a short 4 char random hash
     $clone_name = $env['db_name'] ."_c". time() ."_". substr(md5(uniqid(rand(), true)), 0, 4);
+
+
     
     if ($env['db_type'] == "pgsql") {
         die("Sorry, create:devdb is only supported for mysql right now, need to learn pg_dumpall and pg_restore command syntax first");
@@ -327,9 +341,39 @@ function create_devdb($local_admin_user, $local_admin_password) {
         $command = 'mysql -u '. $local_admin_user .' -p'. $local_admin_password .' -e "CREATE DATABASE '. $clone_name .'";';
         debuglog("Executing command: ". $command ."");
         exec($command);
-        $command = "mysqldump --single-transaction --quick --routines --triggers --events -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."";
+
+        if ($skip_prefixes) {
+            $skip_prefixes = explode(",", $skip_prefixes);
+        } else {
+            $skip_prefixes = [];
+        }
+
+        debuglog("Data for the following table prefixes will be skipped during cloning: ". implode(", ", $skip_prefixes) ."");
+
+        $ignore_command = "";
+
+        foreach ($tables as $table) {
+            foreach ($skip_prefixes as $prefix) {
+                if (strpos($table, $prefix) === 0) {
+                    // Add to --ignore-table parameter of mysqldump command
+                    $ignore_command .= "--ignore-table=". $env['db_name'] .".". $table ." ";
+                    debuglog("Table `". $table ."` will be skipped during cloning because it matches the prefix `". $prefix ."`");
+                    continue 2; // Skip to next table
+                }
+            }
+        }
+        
+        // Structures
+        $command = "mysqldump --single-transaction --quick --no-data -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."";
         debuglog("Executing command: ". $command ."");
         exec($command);
+
+        // Data
+        $command = "mysqldump --single-transaction --quick ". $ignore_command ." -u ". $local_admin_user ." -p". $local_admin_password ." ". $env['db_name'] ." | mysql -u ". $local_admin_user ." -p". $local_admin_password ." ". $clone_name ."";
+        debuglog("Executing command: ". $command ."");
+        exec($command);
+
+
     }
 
     // Give $env['db_user'] permissions to the cloned database, we need this to be able to connect to the cloned database and sanitize the data
@@ -365,6 +409,13 @@ function create_devdb($local_admin_user, $local_admin_password) {
     debuglog("Found ". $tablecnt ." tables in the database");
 
     foreach ($tables as $table) {
+
+        foreach ($skip_prefixes as $prefix) {
+            if (strpos($table, $prefix) === 0) {
+                continue 2; // Skip to next table
+            }
+        }
+
         // Get all columns and column types of given table
         $stmt = $Pdo->query("SHOW COLUMNS FROM `". $table ."`");
         $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
